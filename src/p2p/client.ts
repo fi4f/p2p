@@ -1,13 +1,13 @@
+import p2p from ".";
 import Session from "./session";
+import Version from "./version";
 
-export interface Client {
-  readonly sesh: Session
+export interface Client extends Session {
+  readonly is: "client"
 }
 
-export function Client(sesh: Session): Client {
-  return {
-    sesh
-  }
+export function Client(secret: Secret, appId=Session.APPLICATION_ID): Client {
+
 }
 
 export namespace Client {

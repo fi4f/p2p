@@ -3,7 +3,7 @@
   "version": "1.0.6",
   "description": "",
   "repository": {
-    "url": "https://github.com/fisforfriends/p2p"
+    "url": "https://github.com/fi4f/p2p"
   },
   "main": "out/index.js",
   "types": "out/index.d.ts",

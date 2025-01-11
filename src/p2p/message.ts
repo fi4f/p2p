@@ -1,8 +1,8 @@
 export interface Message {
-  kind   : string
-  
-  reqId ?: string
-  resId ?: string
+  type   : string
+  data   : any
+  requestId  ?: string
+  responseId ?: string
 }
 
 export namespace Message {

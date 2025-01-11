@@ -1,45 +1,30 @@
-import p2p     from "."
-import Secret  from "./secret"
-import Message from "./message"
-import Request from "./request"
-import Version from "./version"
+import p2p      from "."
+import Message  from "./message"
+import Request  from "./request"
+import Version  from "./version"
+import Listener from "./listener"
 
 import Trystero from "trystero"
-
 
 export interface Session {
   readonly secret: string
   readonly id    : string
   readonly pw    : string
+  readonly is    : "client" | "server"
 
-  readonly _trysteroRoom: Trystero.Room
-  readonly _trysteroTx  : Trystero.ActionSender  <Message>
-  readonly _trysteroRx  : Trystero.ActionReceiver<Message>
-}
+  readonly clientIds: Set<string>
+  readonly clientId :     string
+           serverId :     string
+  readonly requests : Map<string, Request>
+  readonly listeners: Map<string, Set<Listener<any>>>
 
-export function Session(secret: Secret, appId=Session.DEFAULT_APPLICATION_ID): Session {
-  secret = Secret.mend(secret)
-  const
-    id    = Secret.id(secret),
-    pw    = Secret.pw(secret),
-    _trysteroRoom = Trystero.joinRoom({ appId, password: pw }, id),
-    [
-      _trysteroTx,
-      _trysteroRx
-    ] = _trysteroRoom.makeAction<Message>(Message.ACTION);
-
-  return {
-    secret,
-    id, pw,
-
-    _trysteroRoom,
-    _trysteroTx  ,
-    _trysteroRx  
-  }
+  readonly __trystero__room: Trystero.Room
+  readonly __trystero__tx  : Trystero.ActionSender  <Message>
+  readonly __trystero__rx  : Trystero.ActionReceiver<Message>
 }
 
 export namespace Session {
-  export const DEFAULT_APPLICATION_ID = Version.toString(p2p.VERSION)
+  export const APPLICATION_ID = Version.toString(p2p.VERSION)
 }
 
 export default Session;
