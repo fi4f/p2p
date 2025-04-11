@@ -1,8 +1,9 @@
+import Message from "./message";
 import Context from "./context";
 
 export interface Listener<T>{
   (
-    data   :         T ,
+    message:         T ,
     context: Context<T>,
   ): void
 }

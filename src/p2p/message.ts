@@ -1,7 +1,7 @@
 export interface Message {
-  from   : string
-  to     : string
-  type   : string
+  by     : string // sent by peer
+  to     : string // sent to peer
+  kind   : string
   data   : any
   reqId ?: string
   resId ?: string
@@ -9,8 +9,6 @@ export interface Message {
 
 export namespace Message {
   export const ACTION = "__message__"
-  export const __HELLO__ = "__hello__"
-  export const __WORLD__ = "__world__"
 }
 
 export default Message;
