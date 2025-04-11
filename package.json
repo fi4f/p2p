@@ -7,6 +7,10 @@
   },
   "main": "out/index.js",
   "types": "out/index.d.ts",
+  "files": [
+    "src",
+    "out"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -14,6 +18,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fi4f/v": "^1.1.1",
     "lodash": "^4.17.21",
     "trystero": "^0.20.0"
   },

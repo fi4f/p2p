@@ -1,9 +1,10 @@
-export type Listener<T> = (
-  self: Listener<T>,
-  data:          T ,
-  from:      string,
-  respond ?: (type: string, data: any) => void,
-  request ?: (type: string, data: any) => void,
-) => void
+import Context from "./context";
+
+export interface Listener<T>{
+  (
+    data   :         T ,
+    context: Context<T>,
+  ): void
+}
 
 export default Listener;

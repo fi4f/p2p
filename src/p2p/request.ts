@@ -1,7 +1,7 @@
 export interface Request {
-  peerId: string
-  resolve : (a  : any) => void
-  reject  : (a ?: any) => void
+  to : string
+  res: (a  : any) => void
+  rej: (a ?: any) => void
 }
 
 export default Request;
