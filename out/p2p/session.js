@@ -20,65 +20,74 @@ const message_1 = __importDefault(require("./message"));
 const trystero_1 = __importDefault(require("trystero"));
 var Session;
 (function (Session) {
-    Session.APPLICATION_ID = v_1.default.toString(_1.default.VERSION);
     Session.__HELLO__ = "__hello__";
     Session.__WORLD__ = "__world__";
     Session.CLIENT_CONNECTED = "__client_connected__";
     Session.SERVER_CONNECTED = "__server_connected__";
     Session.CLIENT_DISCONNECTED = "__client_disconnected__";
     Session.SERVER_DISCONNECTED = "__server_disconnected__";
-    function host(secret, appId = Session.APPLICATION_ID) {
+    function host(secret, appId = v_1.default.toString(_1.default.VERSION)) {
         secret = secret_1.default.mend(secret);
-        const id = secret_1.default.id(secret), pw = secret_1.default.pw(secret), is = "server";
+        const id = secret_1.default.id(secret), pw = secret_1.default.pw(secret);
         const _trysteroRoom = trystero_1.default.joinRoom({ appId, password: pw }, id), [_trysteroTx, _trysteroRx,] = _trysteroRoom.makeAction(message_1.default.ACTION);
         const sesh = {
-            secret, id, pw, is,
-            clientIds: new Set(),
-            clientId: trystero_1.default.selfId,
-            serverId: trystero_1.default.selfId,
+            secret, id, pw, is: "server",
+            peerIds: new Set(),
+            selfId: trystero_1.default.selfId,
+            hostId: trystero_1.default.selfId,
             requests: new Map(),
             listeners: new Map(),
             _trysteroRoom,
             _trysteroTx,
             _trysteroRx,
         };
-        _trysteroRoom.onPeerLeave(peerId => {
-            rejectRequestsFor(sesh, peerId);
-            if (sesh.clientIds.delete(peerId)) {
-                sesh.clientIds.forEach(clientId => {
-                    message(sesh, Session.CLIENT_DISCONNECTED, peerId, clientId);
+        // handle peer disconnections
+        _trysteroRoom.onPeerLeave(leftId => {
+            // reject outbound requests for the peer
+            rejectRequestsFor(sesh, leftId);
+            if (sesh.peerIds.delete(leftId)) {
+                // notify all peers of the disconnection
+                sesh.peerIds.forEach(peerId => {
+                    message(sesh, Session.CLIENT_DISCONNECTED, leftId, peerId);
                 });
+                message(sesh, Session.CLIENT_DISCONNECTED, leftId, sesh.selfId);
             }
         });
-        _trysteroRoom.onPeerJoin((peerId) => __awaiter(this, void 0, void 0, function* () {
-            const __hello__ = yield hash(peerId);
+        // handle peer connections
+        _trysteroRoom.onPeerJoin((newId) => __awaiter(this, void 0, void 0, function* () {
+            // compute the __hello__ and __world__ hashes based on the peerId
+            const __hello__ = yield hash(newId);
             const __world__ = yield hash(__hello__);
             try {
-                if ((yield request(sesh, Session.__HELLO__, __hello__, peerId)) === __world__) {
-                    sesh.clientIds.forEach(clientId => {
-                        message(sesh, Session.CLIENT_CONNECTED, peerId, clientId);
-                        message(sesh, Session.CLIENT_CONNECTED, clientId, peerId);
+                // wait for peer to respond with the correct hash
+                if ((yield request(sesh, Session.__HELLO__, __hello__, newId)) === __world__) {
+                    // notify all peers of the connection
+                    sesh.peerIds.forEach(peerId => {
+                        message(sesh, Session.CLIENT_CONNECTED, newId, peerId);
+                        message(sesh, Session.CLIENT_CONNECTED, peerId, newId);
                     });
-                    sesh.clientIds.add(peerId);
+                    // add the peer to the list of peers
+                    sesh.peerIds.add(newId);
+                    message(sesh, Session.CLIENT_CONNECTED, newId, sesh.selfId);
                 }
             }
             catch (e) {
                 // do nothing
             }
         }));
-        _trysteroRx((message, from) => serverRx(sesh, message, from));
+        _trysteroRx((message, from) => onServerReceive(sesh, message, from));
         return sesh;
     }
     Session.host = host;
-    function join(secret, appId = Session.APPLICATION_ID) {
+    function join(secret, appId = v_1.default.toString(_1.default.VERSION)) {
         secret = secret_1.default.mend(secret);
-        const id = secret_1.default.id(secret), pw = secret_1.default.pw(secret), is = "client";
+        const id = secret_1.default.id(secret), pw = secret_1.default.pw(secret);
         const _trysteroRoom = trystero_1.default.joinRoom({ appId, password: pw }, id), [_trysteroTx, _trysteroRx,] = _trysteroRoom.makeAction(message_1.default.ACTION);
         const sesh = {
-            secret, id, pw, is,
-            clientIds: new Set(),
-            clientId: trystero_1.default.selfId,
-            // serverId : Trystero.selfId,
+            secret, id, pw, is: "client",
+            peerIds: new Set(),
+            selfId: trystero_1.default.selfId,
+            // hostId   : Trystero.selfId,
             requests: new Map(),
             listeners: new Map(),
             _trysteroRoom,
@@ -86,129 +95,155 @@ var Session;
             _trysteroRx,
         };
         _trysteroRoom.onPeerLeave(peerId => {
+            // reject outbound requests for the peer
             rejectRequestsFor(sesh, peerId);
+            // notify all peers of the disconnection
+            if (sesh.peerIds.delete(peerId) && sesh.hostId === peerId) {
+                sesh.hostId = undefined;
+                message(sesh, Session.SERVER_DISCONNECTED, peerId, sesh.selfId);
+            }
         });
-        on(sesh, Session.__HELLO__, (_a, _b) => __awaiter(this, [_a, _b], void 0, function* ({ data }, { from, respond }) {
-            if (sesh.serverId)
+        on(sesh, Session.__HELLO__, (hello_1, _a) => __awaiter(this, [hello_1, _a], void 0, function* (hello, { from, respond }) {
+            if (sesh.hostId)
                 return;
-            const __hello__ = yield hash(sesh.clientId);
+            const __hello__ = yield hash(sesh.selfId);
             const __world__ = yield hash(__hello__);
-            if (data === __hello__) {
-                sesh.serverId = from;
+            if (hello === __hello__) {
+                sesh.hostId = from;
                 respond(Session.__WORLD__, __world__);
+                message(sesh, Session.SERVER_CONNECTED, from, sesh.selfId);
             }
         }));
-        _trysteroRx((message, from) => clientRx(sesh, message, from));
+        _trysteroRx((message, from) => onClientReceive(sesh, message, from));
     }
     Session.join = join;
-    function on(sesh, type, listener) {
-        requireListeners(sesh, type).add(listener);
+    function on(sesh, kind, listener) {
+        requireListeners(sesh, kind).add(listener);
     }
     Session.on = on;
-    function off(sesh, type, listener) {
+    function off(sesh, kind, listener) {
         var _a;
-        (_a = requestListeners(sesh, type)) === null || _a === void 0 ? void 0 : _a.delete(listener);
+        (_a = requestListeners(sesh, kind)) === null || _a === void 0 ? void 0 : _a.delete(listener);
     }
     Session.off = off;
-    function serverRx(sesh, message, from) {
-        // always accept messages sent to myself
-        if (message.to === sesh.clientId)
-            rx(sesh, message, from);
-        // only forward messages to and from validated peers
-        else if (sesh.clientIds.has(message.from) &&
-            sesh.clientIds.has(message.to))
-            send(sesh, Object.assign(Object.assign({}, message), { from }));
-    }
-    function clientRx(sesh, message, from) {
-        if (from === sesh.clientId || // always accept messages from the client
-            from === sesh.serverId || // always accept messages from the server
-            // only accept __hello__ messages when the server is undefined
-            (!sesh.serverId && message.type === "__hello__"))
-            rx(sesh, message, from);
-    }
-    function rx(sesh, message, from) {
-        var _a;
-        if (message.resId)
-            resolveRequest(sesh, message.resId, message.data);
-        (_a = requestListeners(sesh, message.type)) === null || _a === void 0 ? void 0 : _a.forEach(self => {
-            const respond = (type, data) => {
-                Session.message(sesh, type, data, message.from, { resId: message.reqId });
-            };
-            const request = (type, data) => {
-                Session.request(sesh, type, data, message.from, { resId: message.reqId });
-            };
-            self(message, { self, from, respond, request });
-        });
-    }
-    function serverTx(sesh, message) {
-        sesh._trysteroTx(message, message.to);
-    }
-    function clientTx(sesh, message) {
-        if (sesh.serverId)
-            sesh._trysteroTx(message, sesh.serverId);
-        else
-            sesh._trysteroTx(message, message.to);
-    }
-    function send(sesh, message) {
-        if (sesh.is === "server")
-            serverTx(sesh, message);
-        else
-            clientTx(sesh, message);
-    }
-    Session.send = send;
-    function message(sesh, type, data, to, o) {
-        send(sesh, Object.assign(Object.assign({}, o), { from: sesh.clientId, type, data, to }));
+    /** Construct and send a message. */
+    function message(sesh, kind, data, to, o) {
+        send(sesh, Object.assign(Object.assign({}, o), { by: sesh.selfId, kind, data, to }));
     }
     Session.message = message;
-    function request(sesh, type, data, to, o) {
+    /** Construct and send a request. Returns a promise which resolves upon a response.*/
+    function request(sesh, kind, data, to, o) {
         var _a;
-        const reqId = (_a = o === null || o === void 0 ? void 0 : o.reqId) !== null && _a !== void 0 ? _a : getUniqueRequestId(sesh);
+        const reqId = (_a = o === null || o === void 0 ? void 0 : o.reqId) !== null && _a !== void 0 ? _a : unique(sesh.requests);
         return new Promise((res, rej) => {
             sesh.requests.set(reqId, { to, res, rej });
-            message(sesh, type, data, to, { reqId });
+            message(sesh, kind, data, to, { reqId });
         });
     }
     Session.request = request;
-    function getUniqueRequestId(sesh) {
-        let reqId = crypto.randomUUID();
-        while (sesh.requests.has(reqId))
-            reqId = crypto.randomUUID();
-        return reqId;
+    /***************
+     * PRIVATE API *
+     ***************/
+    /** Send a message */
+    function send(sesh, message) {
+        if (sesh.is === "server")
+            serverSend(sesh, message);
+        else
+            clientSend(sesh, message);
     }
-    Session.getUniqueRequestId = getUniqueRequestId;
-    function requireListeners(sesh, type) {
-        let listeners = sesh.listeners.get(type);
+    /** Send a message as a server. */
+    function serverSend(sesh, message) {
+        if (message.to === sesh.selfId)
+            onServerReceive(sesh, message, sesh.selfId);
+        else
+            sesh._trysteroTx(message, message.to);
+    }
+    /** Send a message as a client. */
+    function clientSend(sesh, message) {
+        if (message.to === sesh.selfId)
+            onClientReceive(sesh, message, sesh.selfId);
+        else 
+        // if client has registered a host peer, forward through them
+        if (sesh.hostId)
+            sesh._trysteroTx(message, sesh.hostId);
+        else
+            sesh._trysteroTx(message, message.to);
+    }
+    /** Handle incoming messages as a server. */
+    function onServerReceive(sesh, message, from) {
+        // 
+        if (message.kind === Session.__WORLD__ || // accept __world__ messages from all       peers
+            sesh.peerIds.has(from) // accept   other   messages from validated peers
+        )
+            onReceive(sesh, message, from);
+    }
+    /** Handle incoming messages as a client. */
+    function onClientReceive(sesh, message, from) {
+        if (from === sesh.selfId || // always accept messages from the self
+            from === sesh.hostId || // always accept messages from the host
+            // only accept __hello__ messages when the host is undefined
+            (!sesh.hostId && message.kind === Session.__HELLO__))
+            onReceive(sesh, message, from);
+    }
+    /** Handle incoming messages */
+    function onReceive(sesh, message, from) {
+        var _a;
+        // resolve pending requests with matching id
+        if (message.resId)
+            resolveRequest(sesh, message.resId, message.data);
+        // invoke listeners of the specified kind
+        (_a = requestListeners(sesh, message.kind)) === null || _a === void 0 ? void 0 : _a.forEach(self => self(message.data, Object.assign(Object.assign({}, message), { self, from, respond: responder(sesh, message), request: requester(sesh, message) })));
+    }
+    /** Construct a responder function for the specified message. */
+    function responder(sesh, message) {
+        return (kind, data) => {
+            Session.message(sesh, kind, data, message.by, { resId: message.reqId });
+        };
+    }
+    /** Construct a requester function for the specified message. */
+    function requester(sesh, message) {
+        return (kind, data) => {
+            Session.request(sesh, kind, data, message.by, { resId: message.reqId });
+        };
+    }
+    /** Generate a unique identifier, given a set of identifiers. */
+    function unique(ids) {
+        let id = crypto.randomUUID();
+        while (ids.has(id))
+            id = crypto.randomUUID();
+        return id;
+    }
+    /** Retrieve listeners of the specified kind, creating them if they don't exist. */
+    function requireListeners(sesh, kind) {
+        let listeners = sesh.listeners.get(kind);
         if (!listeners)
-            sesh.listeners.set(type, listeners = new Set());
+            sesh.listeners.set(kind, listeners = new Set());
         return listeners;
     }
-    Session.requireListeners = requireListeners;
-    function requestListeners(sesh, type) {
-        let listeners = sesh.listeners.get(type);
-        // if(!listeners) sesh.listeners.set(
-        //   type, listeners = new Set()
-        // ) 
+    /** Retrieve listeners of the specified kind, if they exist. */
+    function requestListeners(sesh, kind) {
+        let listeners = sesh.listeners.get(kind);
         return listeners;
     }
-    Session.requestListeners = requestListeners;
+    /** Resolve the specified request with an optional value. */
     function resolveRequest(sesh, reqId, a) {
         const request = sesh.requests.get(reqId);
         if (request && sesh.requests.delete(reqId))
             request.res(a);
     }
-    Session.resolveRequest = resolveRequest;
+    /** Reject the specified request with an optional value. */
     function rejectRequest(sesh, reqId, a) {
         const request = sesh.requests.get(reqId);
         if (request && sesh.requests.delete(reqId))
             request.rej(a);
     }
-    Session.rejectRequest = rejectRequest;
+    /** Reject all outbound requests for the specified peer. */
     function rejectRequestsFor(sesh, peerId, a) {
         for (const [reqId, request] of sesh.requests)
             if (request.to === peerId)
                 rejectRequest(sesh, reqId, a);
     }
-    Session.rejectRequestsFor = rejectRequestsFor;
+    /** Quickly hash a value using the specified algorithm. */
     function hash(what_1) {
         return __awaiter(this, arguments, void 0, function* (what, how = "SHA-256") {
             const data = new TextEncoder().encode(String(what));
@@ -216,6 +251,5 @@ var Session;
             return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
         });
     }
-    Session.hash = hash;
 })(Session || (exports.Session = Session = {}));
 exports.default = Session;

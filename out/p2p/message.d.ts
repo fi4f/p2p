@@ -1,8 +1,8 @@
-export interface Message<T> {
-    from: string;
+export interface Message {
+    by: string;
     to: string;
-    type: string;
-    data: T;
+    kind: string;
+    data: any;
     reqId?: string;
     resId?: string;
 }

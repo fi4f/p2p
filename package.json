@@ -1,6 +1,6 @@
 {
   "name": "@fi4f/p2p",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "",
   "repository": {
     "url": "https://github.com/fi4f/p2p"
@@ -25,5 +25,10 @@
   "devDependencies": {
     "@types/lodash": "^4.17.13",
     "typescript": "^5.6.3"
-  }
+  },
+  "trustedDependencies": [
+    "@firebase/util",
+    "node-datachannel",
+    "protobufjs"
+  ]
 }

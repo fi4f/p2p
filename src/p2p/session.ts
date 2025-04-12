@@ -201,15 +201,15 @@ export namespace Session {
   /** Send a message as a server. */
   function serverSend(sesh: Session, message: Message) {
     if(message.to === sesh.selfId) 
-      onServerReceive (sesh, message, message.by)
+      onServerReceive (sesh, message, sesh.selfId)
     else
-      sesh._trysteroTx(      message, message.to)
+      sesh._trysteroTx(      message, message.to )
   }
 
   /** Send a message as a client. */
   function clientSend(sesh: Session, message: Message) {
     if(message.to === sesh.selfId) 
-      onClientReceive(sesh, message, message.by)
+      onClientReceive(sesh, message, sesh.selfId)
     else
       // if client has registered a host peer, forward through them
       if (sesh.hostId) sesh._trysteroTx(message, sesh.hostId)
