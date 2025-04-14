@@ -20,9 +20,9 @@ export interface Session {
   readonly requests  : Map<string, Request>
   readonly listeners : Map<string, Set<Listener<any>>>
 
-  readonly _trysteroRoom: Trystero.Room
-  readonly _trysteroTx  : Trystero.ActionSender  <Message>
-  readonly _trysteroRx  : Trystero.ActionReceiver<Message>
+  readonly _trysteroRoom   : Trystero.Room
+  readonly _trysteroSend   : Trystero.ActionSender  <Message>
+  readonly _trysteroReceive: Trystero.ActionReceiver<Message>
 }
 
 export namespace Session {
@@ -37,10 +37,10 @@ export namespace Session {
 
   export const __HELLO__ = "__hello__"
   export const __WORLD__ = "__world__"
-  export const CLIENT_CONNECTED    = "__client_connected__"
-  export const SERVER_CONNECTED    = "__server_connected__"
-  export const CLIENT_DISCONNECTED = "__client_disconnected__"
-  export const SERVER_DISCONNECTED = "__server_disconnected__"
+  export const PEER_ACKNOWLEDGED = "__peer_acknowledged__"
+  export const PEER_DISCONNECTED = "__peer_disconnected__"
+  export const HOST_ACKNOWLEDGED = "__host_acknowledged__"
+  export const HOST_DISCONNECTED = "__host_disconnected__"
 
   export function host(secret: string | [string, string], appId=Version.toString(p2p.VERSION)) {
     secret = Secret.mend(secret)
@@ -51,8 +51,8 @@ export namespace Session {
     const 
       _trysteroRoom = Trystero.joinRoom({appId, password: pw}, id),
       [
-        _trysteroTx,
-        _trysteroRx,
+        _trysteroSend   ,
+        _trysteroReceive,
       ] = _trysteroRoom.makeAction<Message>(Message.ACTION);
 
     const sesh: Server = {
@@ -65,8 +65,8 @@ export namespace Session {
       listeners: new Map(),
 
       _trysteroRoom,
-      _trysteroTx  ,
-      _trysteroRx  ,
+      _trysteroSend,
+      _trysteroReceive,
     }
 
     // handle peer disconnections
@@ -78,36 +78,36 @@ export namespace Session {
       if (sesh.peerIds.delete(leftId)) {
         // notify all peers of the disconnection
         sesh.peerIds.forEach(peerId => {
-          message(sesh, CLIENT_DISCONNECTED, leftId,      peerId)
+          message(sesh, PEER_DISCONNECTED, leftId,      peerId)
         })
-          message(sesh, CLIENT_DISCONNECTED, leftId, sesh.selfId)
+          message(sesh, PEER_DISCONNECTED, leftId, sesh.selfId)
       }
     })
 
     // handle peer connections
-    _trysteroRoom.onPeerJoin (async newId => {
+    _trysteroRoom.onPeerJoin (async joinId => {
       // compute the __hello__ and __world__ hashes based on the peerId
-      const __hello__ = await hash(  newId  )
+      const __hello__ = await hash(  joinId  )
       const __world__ = await hash(__hello__)
       try {
         // wait for peer to respond with the correct hash
-        if (await request(sesh, __HELLO__, __hello__, newId) === __world__) {
+        if (await request(sesh, __HELLO__, __hello__, joinId) === __world__) {
           // notify all peers of the connection
           sesh.peerIds.forEach(peerId => {            
-            message(sesh, CLIENT_CONNECTED, newId , peerId)
-            message(sesh, CLIENT_CONNECTED, peerId, newId )
+            message(sesh, PEER_ACKNOWLEDGED, joinId, peerId)
+            message(sesh, PEER_ACKNOWLEDGED, peerId, joinId)
           })
           // add the peer to the list of peers
-          sesh.peerIds.add(newId)
+          sesh.peerIds.add(joinId)
 
-          message(sesh, CLIENT_CONNECTED, newId, sesh.selfId)
+          message(sesh, PEER_ACKNOWLEDGED, joinId, sesh.selfId)
         }
       } catch(e) {
         // do nothing
       }
     })
 
-    _trysteroRx((message, from) => onServerReceive(sesh, message, from))
+    _trysteroReceive((message, from) => onServerReceive(sesh, message, from))
 
     return sesh
   }
@@ -121,8 +121,8 @@ export namespace Session {
     const
       _trysteroRoom = Trystero.joinRoom({appId, password: pw}, id),
       [
-        _trysteroTx,
-        _trysteroRx,
+        _trysteroSend   ,
+        _trysteroReceive,
       ] = _trysteroRoom.makeAction<Message>(Message.ACTION);
 
     const sesh: Client = {
@@ -135,8 +135,8 @@ export namespace Session {
       listeners: new Map(),
 
       _trysteroRoom,
-      _trysteroTx  ,
-      _trysteroRx  ,
+      _trysteroSend,
+      _trysteroReceive,
     }
 
     _trysteroRoom.onPeerLeave(peerId => {
@@ -146,7 +146,7 @@ export namespace Session {
       // notify all peers of the disconnection
       if (sesh.peerIds.delete(peerId) && sesh.hostId === peerId) {
         sesh.hostId = undefined
-        message(sesh, SERVER_DISCONNECTED, peerId, sesh.selfId)
+        message(sesh, HOST_DISCONNECTED, peerId, sesh.selfId)
       }
     })
 
@@ -159,11 +159,11 @@ export namespace Session {
       if(hello === __hello__) {
         sesh.hostId = from
         respond(__WORLD__, __world__)
-        message(sesh, SERVER_CONNECTED, from, sesh.selfId)
+        message(sesh, HOST_ACKNOWLEDGED, from, sesh.selfId)
       }
     })
 
-    _trysteroRx((message, from) => onClientReceive(sesh, message, from))
+    _trysteroReceive((message, from) => onClientReceive(sesh, message, from))
   }
 
   export function on  <T>(sesh: Session, kind: string, listener: Listener<T>) {
@@ -201,38 +201,58 @@ export namespace Session {
   /** Send a message as a server. */
   function serverSend(sesh: Session, message: Message) {
     if(message.to === sesh.selfId) 
-      onServerReceive (sesh, message, sesh.selfId)
+      onServerReceive(sesh, message, sesh.selfId)
     else
-      sesh._trysteroTx(      message, message.to )
+      sesh._trysteroSend(message, message.to)
   }
 
   /** Send a message as a client. */
   function clientSend(sesh: Session, message: Message) {
-    if(message.to === sesh.selfId) 
-      onClientReceive(sesh, message, sesh.selfId)
-    else
-      // if client has registered a host peer, forward through them
-      if (sesh.hostId) sesh._trysteroTx(message, sesh.hostId)
-      else             sesh._trysteroTx(message, message.to )
+    // if client has registered a host peer, forward through them
+    if (sesh.hostId) sesh._trysteroSend(message, sesh.hostId)
+    else             sesh._trysteroSend(message, message.to )
   }
 
   /** Handle incoming messages as a server. */
   function onServerReceive(sesh: Session, message: Message, from: string) {
-    // 
-    if(
-      message.kind === __WORLD__ || // accept __world__ messages from all       peers
-      sesh.peerIds.has(   from   )  // accept   other   messages from validated peers
-    ) onReceive(sesh, message, from)
+    // accept messages from myself and __world__ from peers
+    if(from === sesh.selfId || message.kind === __WORLD__) 
+      onReceive(sesh, message, from)
+    // never accept system messages from other peers
+    else if(
+      message.kind === PEER_ACKNOWLEDGED ||
+      message.kind === PEER_DISCONNECTED ||
+      message.kind === HOST_ACKNOWLEDGED ||
+      message.kind === HOST_DISCONNECTED ||
+      message.kind === __HELLO__
+    ) return
+    // accept messages from validated peers
+    else if(sesh.peerIds.has(from)) 
+      onReceive(sesh, message, from)
   }
 
   /** Handle incoming messages as a client. */
   function onClientReceive(sesh: Session, message: Message, from: string) {
-    if (      
-      from === sesh.selfId || // always accept messages from the self
-      from === sesh.hostId || // always accept messages from the host
-      // only accept __hello__ messages when the host is undefined
-      (!sesh.hostId && message.kind === __HELLO__)
+    // accept messages from myself
+    // accept messages from the host
+    // accept __hello__ messages when the host is undefined
+    if (
+      from === sesh.selfId || 
+      from === sesh.hostId ||
+      (sesh.hostId === undefined && message.kind === __HELLO__)
     ) onReceive(sesh, message, from)
+    // never accept system messages from other peers
+    else if(
+      message.kind === HOST_ACKNOWLEDGED ||
+      message.kind === HOST_DISCONNECTED ||
+      message.kind === PEER_ACKNOWLEDGED ||
+      message.kind === PEER_DISCONNECTED ||
+      message.kind === __HELLO__ ||
+      message.kind === __WORLD__
+    ) return
+    // accept messages from validated peers
+    else if(sesh.peerIds.has(from))
+      onReceive(sesh, message, from)    
   }  
 
   /** Handle incoming messages */
