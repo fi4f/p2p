@@ -42,6 +42,10 @@ export namespace Session {
   export const HOST_ACKNOWLEDGED = "__host_acknowledged__"
   export const HOST_DISCONNECTED = "__host_disconnected__"
 
+  export const INCLUSIVE = "__inclusive__"
+  export const EXCLUSIVE = "__exclusive__"
+  export type Broadcast = typeof INCLUSIVE | typeof EXCLUSIVE
+
   export function host(secret: string | [string, string], appId=Version.toString(p2p.VERSION)) {
     secret = Secret.mend(secret)
     const
@@ -186,6 +190,23 @@ export namespace Session {
       sesh.requests.set(reqId, { to, res, rej })
       message( sesh, kind, data, to, { reqId } )
     })
+  }
+
+  export function broadcast(sesh: Session, kind: string, data: any, ids: Array<string> = [ ], mode: Broadcast = INCLUSIVE) {
+    switch(mode) {
+      case INCLUSIVE: broadcastInclusive(sesh, kind, data, ids); break
+      case EXCLUSIVE: broadcastExclusive(sesh, kind, data, ids); break
+    }
+  }
+
+  export function broadcastInclusive(sesh: Session, kind: string, data: any, ids: Array<string> = [ ]) {
+    const peers = Array.from(sesh.peerIds).filter(id =>  ids.includes(id))
+    peers.forEach(id => message(sesh, kind, data, id))
+  }
+
+  export function broadcastExclusive(sesh: Session, kind: string, data: any, ids: Array<string> = [ ]) {
+    const peers = Array.from(sesh.peerIds).filter(id => !ids.includes(id))
+    peers.forEach(id => message(sesh, kind, data, id))
   }
 
   /***************
