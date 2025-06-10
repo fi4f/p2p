@@ -93,7 +93,7 @@ export namespace Session {
         // wait for peer to respond with the correct hash
         if (await request(sesh, __HELLO__, __hello__, joinId) === __world__) {
           // notify all peers of the connection
-          sesh.peerIds.forEach(peerId => {            
+          sesh.peerIds.forEach(peerId => {
             message(sesh, PEER_ACKNOWLEDGED, joinId, peerId)
             message(sesh, PEER_ACKNOWLEDGED, peerId, joinId)
           })
@@ -252,7 +252,7 @@ export namespace Session {
     ) return
     // accept messages from validated peers
     else if(sesh.peerIds.has(from))
-      onReceive(sesh, message, from)    
+      onReceive(sesh, message, from)
   }  
 
   /** Handle incoming messages */
